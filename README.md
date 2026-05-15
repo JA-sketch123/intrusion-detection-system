@@ -14,6 +14,10 @@ The system analyzes packets using predefined security rules like community rules
 ## Technologies Used
 - Snort 3.0
 - Python
+- Flask
+- Plotly
+- Pandas
+- JSON
 - Kali Linux / Linux
 - Packet Analysis
 
