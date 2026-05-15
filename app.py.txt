@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 LOG_FILE = "/var/log/snort/alert_json.txt"
 
-# 🔥 RULE MAP
+#  RULE MAP
 rule_map = {
     "1:1000001:1": ("ICMP TEST ALERT", "LOW"),
     "1:1000002:1": ("TCP SYN SCAN", "MEDIUM"),
@@ -17,7 +17,7 @@ rule_map = {
     "1:3000001:1": ("NMAP PORT SCAN", "HIGH")
 }
 
-# 🔥 TIMESTAMP FIX (FINAL CORRECT VERSION)
+# TIMESTAMP FIX (FINAL CORRECT VERSION)
 def fix_timestamp(ts):
     try:
         current_year = datetime.now().year
@@ -25,7 +25,7 @@ def fix_timestamp(ts):
 
         dt = datetime.strptime(ts_fixed, "%Y %m/%d-%H:%M:%S.%f")
 
-        # ❌ NO pytz conversion here
+        #  NO pytz conversion here
         return dt.strftime("%Y-%m-%d %H:%M:%S IST")
 
     except:
@@ -68,7 +68,7 @@ def load_data():
     else:
         df['dst_ip'] = "Unknown"
 
-    # 🔥 TIMESTAMP FIX APPLIED HERE
+    #  TIMESTAMP FIX APPLIED HERE
     if 'timestamp' in df.columns:
         df['timestamp'] = df['timestamp'].apply(fix_timestamp)
     else:
@@ -97,7 +97,7 @@ def data():
         alert_counts = df['alert_name'].value_counts().to_dict()
         ip_counts = pd.concat([df['src_ip'], df['dst_ip']]).value_counts().to_dict()
 
-        # 🔥 IMPORTANT: time graph uses string timestamps (safe)
+        #  IMPORTANT: time graph uses string timestamps (safe)
         time_counts = df['timestamp'].value_counts().sort_index().to_dict()
 
         latest = df.tail(5)[['alert_name','src_ip','dst_ip','severity','timestamp']]
@@ -141,14 +141,14 @@ h1 { text-align:center; text-shadow: 0 0 10px #00ffcc; }
 
 <body>
 
-<h1>⚡ REAL-TIME SOC DASHBOARD ⚡</h1>
+<h1> REAL-TIME SOC DASHBOARD </h1>
 <div id="clock" style="text-align:center;"></div>
 
 <div class="box" id="alerts"></div>
 <div class="box" id="ips"></div>
 <div class="box" id="time"></div>
 
-<h2>🚨 Live Alerts</h2>
+<h2> Live Alerts</h2>
 <div id="live"></div>
 
 <script>
