@@ -1,0 +1,232 @@
+from flask import Flask, jsonify, render_template_string
+import json
+import pandas as pd
+from datetime import datetime
+import pytz
+
+app = Flask(__name__)
+
+LOG_FILE = "/var/log/snort/alert_json.txt"
+
+# 🔥 RULE MAP
+rule_map = {
+    "1:1000001:1": ("ICMP TEST ALERT", "LOW"),
+    "1:1000002:1": ("TCP SYN SCAN", "MEDIUM"),
+    "1:1000004:1": ("ICMP FLOOD", "HIGH"),
+    "1:1000100:1": ("SYN FLOOD", "CRITICAL"),
+    "1:3000001:1": ("NMAP PORT SCAN", "HIGH")
+}
+
+# 🔥 TIMESTAMP FIX (FINAL CORRECT VERSION)
+def fix_timestamp(ts):
+    try:
+        current_year = datetime.now().year
+        ts_fixed = f"{current_year} {ts}"
+
+        dt = datetime.strptime(ts_fixed, "%Y %m/%d-%H:%M:%S.%f")
+
+        # ❌ NO pytz conversion here
+        return dt.strftime("%Y-%m-%d %H:%M:%S IST")
+
+    except:
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
+
+def load_data():
+    data = []
+
+    try:
+        with open(LOG_FILE) as f:
+            for line in f:
+                try:
+                    data.append(json.loads(line))
+                except:
+                    continue
+    except:
+        return pd.DataFrame()
+
+    if not data:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(data)
+
+    # ALERT + SEVERITY
+    if 'rule' in df.columns:
+        df['alert_name'] = df['rule'].apply(lambda x: rule_map.get(x, (x, "MEDIUM"))[0])
+        df['severity'] = df['rule'].apply(lambda x: rule_map.get(x, (x, "MEDIUM"))[1])
+    else:
+        df['alert_name'] = "Unknown"
+        df['severity'] = "LOW"
+
+    # IP EXTRACTION
+    if 'src_ap' in df.columns:
+        df['src_ip'] = df['src_ap'].apply(lambda x: str(x).split(':')[0])
+    else:
+        df['src_ip'] = "Unknown"
+
+    if 'dst_ap' in df.columns:
+        df['dst_ip'] = df['dst_ap'].apply(lambda x: str(x).split(':')[0])
+    else:
+        df['dst_ip'] = "Unknown"
+
+    # 🔥 TIMESTAMP FIX APPLIED HERE
+    if 'timestamp' in df.columns:
+        df['timestamp'] = df['timestamp'].apply(fix_timestamp)
+    else:
+        df['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
+
+    return df
+
+
+@app.route("/data")
+def data():
+    try:
+        df = load_data()
+
+        ist = pytz.timezone("Asia/Kolkata")
+        current_time = datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S IST")
+
+        if df.empty:
+            return jsonify({
+                "alerts": {},
+                "ips": {},
+                "time": {},
+                "latest": [],
+                "now": current_time
+            })
+
+        alert_counts = df['alert_name'].value_counts().to_dict()
+        ip_counts = pd.concat([df['src_ip'], df['dst_ip']]).value_counts().to_dict()
+
+        # 🔥 IMPORTANT: time graph uses string timestamps (safe)
+        time_counts = df['timestamp'].value_counts().sort_index().to_dict()
+
+        latest = df.tail(5)[['alert_name','src_ip','dst_ip','severity','timestamp']]
+        latest = latest.to_dict(orient='records')
+
+        return jsonify({
+            "alerts": alert_counts,
+            "ips": ip_counts,
+            "time": time_counts,
+            "latest": latest,
+            "now": current_time
+        })
+
+    except Exception as e:
+        print("ERROR:", e)
+        return jsonify({
+            "alerts": {},
+            "ips": {},
+            "time": {},
+            "latest": [],
+            "now": datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S IST")
+        })
+
+
+@app.route("/")
+def dashboard():
+    return render_template_string("""
+<html>
+<head>
+<title>REAL SOC</title>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+<style>
+body { background:black; color:#00ffcc; font-family: monospace; }
+h1 { text-align:center; text-shadow: 0 0 10px #00ffcc; }
+.box { border:1px solid #00ffcc; padding:10px; margin:10px; box-shadow:0 0 10px #00ffcc; }
+.blink { animation: blink 1s infinite; }
+@keyframes blink { 50% {opacity:0.3;} }
+</style>
+</head>
+
+<body>
+
+<h1>⚡ REAL-TIME SOC DASHBOARD ⚡</h1>
+<div id="clock" style="text-align:center;"></div>
+
+<div class="box" id="alerts"></div>
+<div class="box" id="ips"></div>
+<div class="box" id="time"></div>
+
+<h2>🚨 Live Alerts</h2>
+<div id="live"></div>
+
+<script>
+
+function loadData(){
+    fetch('/data')
+    .then(res => res.json())
+    .then(data => {
+
+        document.getElementById("clock").innerHTML = data.now;
+
+        let alerts = data.alerts || {};
+        let ips = data.ips || {};
+        let time = data.time || {};
+        let latest = data.latest || [];
+
+        Plotly.newPlot('alerts', [{
+            x: Object.keys(alerts),
+            y: Object.values(alerts),
+            type:'bar',
+            marker:{color:'#0033cc'}
+        }], {
+            title:'Alert Types',
+            paper_bgcolor:'black',
+            font:{color:'#00ffcc'}
+        });
+
+        Plotly.newPlot('ips', [{
+            labels:Object.keys(ips),
+            values:Object.values(ips),
+            type:'pie'
+        }], {
+            title:'Network Traffic',
+            paper_bgcolor:'black',
+            font:{color:'#00ffcc'}
+        });
+
+        Plotly.newPlot('time', [{
+            x:Object.keys(time),
+            y:Object.values(time),
+            type:'scatter',
+            mode:'lines+markers',
+            line:{color:'#00ff99'}
+        }], {
+            title:'Attack Timeline (IST)',
+            paper_bgcolor:'black',
+            font:{color:'#00ffcc'}
+        });
+
+        let html = "";
+        latest.forEach(a=>{
+            let color = "#00ffcc";
+
+            if(a.severity == "LOW") color = "#00ff00";
+            if(a.severity == "MEDIUM") color = "#ffff00";
+            if(a.severity == "HIGH") color = "#ff9900";
+            if(a.severity == "CRITICAL") color = "#ff0000";
+
+            html += `<div class="blink" style="color:${color}">
+            ⚠️ ${a.alert_name} | ${a.src_ip} → ${a.dst_ip} 
+            | ${a.severity} | ⏱ ${a.timestamp}
+            </div>`;
+        });
+
+        document.getElementById("live").innerHTML = html;
+
+    });
+}
+
+setInterval(loadData, 3000);
+loadData();
+
+</script>
+
+</body>
+</html>
+""")
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
