@@ -34,6 +34,12 @@ Key dashboard components include:
 
 The dashboard was developed using Flask and Plotly for interactive monitoring and visualization of detected network activities.
 
+## Dashboard Screenshots
+
+![Dashboard](dashboard1.png)
+
+![Attack Timeline](dashboard2.png)
+
 ## Author
 Jahanvi Suri
 B.Tech CSE (Cyber Security)
